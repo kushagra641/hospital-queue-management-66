@@ -1,0 +1,413 @@
+/*
+ * Hospital Queue Management System
+ * --------------------------------
+ * Data Structures (BCS301) - PBL Project
+ * ITS Engineering College, Greater Noida
+ *
+ * Normal patients   : linked-list queue (FIFO)
+ * Emergency patients: priority-ordered linked list
+ *                     1 = High, 2 = Medium, 3 = Low (smaller = higher priority)
+ *                     equal priorities keep arrival order
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <ctype.h>
+
+#define LINE "============================================"
+#define DASH "--------------------------------------------"
+
+struct Patient {
+    int id;
+    char name[50];
+    int age;
+    char problem[100];
+    int priority;          /* 0 = normal, 1 = High, 2 = Medium, 3 = Low */
+};
+
+typedef struct Node {
+    struct Patient data;
+    struct Node *next;
+} Node;
+
+/* ---------- Global state ---------- */
+Node *normalFront = NULL, *normalRear = NULL;
+Node *emergencyFront = NULL;
+int nextPatientId = 1001;
+
+/* ---------- Input helpers ---------- */
+void clearInputBuffer(void)
+{
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF)
+        ;
+}
+
+/* Reads a line safely (supports spaces) and removes trailing newline */
+void readLine(char *buf, int size)
+{
+    if (fgets(buf, size, stdin) == NULL) {
+        buf[0] = '\0';
+        return;
+    }
+    size_t len = strlen(buf);
+    if (len > 0 && buf[len - 1] == '\n')
+        buf[len - 1] = '\0';
+    else
+        clearInputBuffer();      /* line was longer than buffer */
+}
+
+/* Reads an integer; returns 1 on success, 0 on invalid input */
+int readInt(int *value)
+{
+    char buf[32], *end;
+    long v;
+
+    readLine(buf, sizeof(buf));
+    if (buf[0] == '\0')
+        return 0;
+    v = strtol(buf, &end, 10);
+    while (*end == ' ' || *end == '\t')
+        end++;
+    if (*end != '\0')
+        return 0;
+    *value = (int)v;
+    return 1;
+}
+
+void pauseScreen(void)
+{
+    char buf[8];
+    printf("\nPress Enter to continue...");
+    readLine(buf, sizeof(buf));
+}
+
+/* Case-insensitive string comparison */
+int equalsIgnoreCase(const char *a, const char *b)
+{
+    while (*a && *b) {
+        if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
+            return 0;
+        a++;
+        b++;
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+/* ---------- Display helpers ---------- */
+const char *priorityName(int p)
+{
+    switch (p) {
+        case 1:  return "HIGH";
+        case 2:  return "MEDIUM";
+        case 3:  return "LOW";
+        default: return "NONE";
+    }
+}
+
+void printHeader(const char *title)
+{
+    int len = (int)strlen(title);
+    int pad = (44 - len) / 2;
+    printf("\n%s\n%*s%s\n%s\n", LINE, pad, "", title, LINE);
+}
+
+void printPatient(const struct Patient *p)
+{
+    printf("%s\n", DASH);
+    printf("Patient ID : %d\n", p->id);
+    printf("Name       : %s\n", p->name);
+    printf("Age        : %d\n", p->age);
+    printf("Problem    : %s\n", p->problem);
+    if (p->priority == 0) {
+        printf("Type       : Normal\n");
+    } else {
+        printf("Type       : Emergency\n");
+        printf("Priority   : %s\n", priorityName(p->priority));
+    }
+    printf("%s\n", DASH);
+}
+
+/* ---------- Queue operations ---------- */
+Node *createNode(struct Patient p)
+{
+    Node *n = (Node *)malloc(sizeof(Node));
+    if (n == NULL) {
+        printf("Memory allocation failed!\n");
+        exit(1);
+    }
+    n->data = p;
+    n->next = NULL;
+    return n;
+}
+
+/* Normal queue: insert at rear (FIFO) */
+void enqueueNormal(struct Patient p)
+{
+    Node *n = createNode(p);
+    if (normalRear == NULL) {
+        normalFront = normalRear = n;
+    } else {
+        normalRear->next = n;
+        normalRear = n;
+    }
+}
+
+/* Normal queue: remove from front. Caller must check queue is not empty. */
+struct Patient dequeueNormal(void)
+{
+    Node *temp = normalFront;
+    struct Patient p = temp->data;
+    normalFront = normalFront->next;
+    if (normalFront == NULL)
+        normalRear = NULL;
+    free(temp);
+    return p;
+}
+
+/* Emergency queue: insert in ascending priority order (stable) */
+void enqueueEmergency(struct Patient p)
+{
+    Node *n = createNode(p);
+
+    if (emergencyFront == NULL || p.priority < emergencyFront->data.priority) {
+        n->next = emergencyFront;
+        emergencyFront = n;
+        return;
+    }
+    Node *cur = emergencyFront;
+    while (cur->next != NULL && cur->next->data.priority <= p.priority)
+        cur = cur->next;
+    n->next = cur->next;
+    cur->next = n;
+}
+
+/* Emergency queue: remove highest priority. Caller must check not empty. */
+struct Patient dequeueEmergency(void)
+{
+    Node *temp = emergencyFront;
+    struct Patient p = temp->data;
+    emergencyFront = emergencyFront->next;
+    free(temp);
+    return p;
+}
+
+/* ---------- Menu operations ---------- */
+void readPatientDetails(struct Patient *p)
+{
+    p->id = nextPatientId++;
+
+    printf("Enter patient name: ");
+    readLine(p->name, sizeof(p->name));
+
+    printf("Enter age: ");
+    while (!readInt(&p->age) || p->age <= 0 || p->age > 120) {
+        printf("Invalid age. Enter age (1-120): ");
+    }
+
+    printf("Enter problem: ");
+    readLine(p->problem, sizeof(p->problem));
+}
+
+void addNormalPatient(void)
+{
+    struct Patient p;
+
+    printHeader("ADD NORMAL PATIENT");
+    readPatientDetails(&p);
+    p.priority = 0;
+    enqueueNormal(p);
+
+    printHeader("PATIENT REGISTERED");
+    printf("\n      Patient added successfully!\n\n");
+    printPatient(&p);
+    printf("\n      Please wait for your turn.\n\n%s\n", LINE);
+    pauseScreen();
+}
+
+void addEmergencyPatient(void)
+{
+    struct Patient p;
+    int choice;
+
+    printHeader("ADD EMERGENCY PATIENT");
+    readPatientDetails(&p);
+
+    printf("\nSelect Priority:\n1. High\n2. Medium\n3. Low\nEnter choice: ");
+    while (!readInt(&choice) || choice < 1 || choice > 3) {
+        printf("Invalid choice. Enter 1, 2 or 3: ");
+    }
+    p.priority = choice;
+    enqueueEmergency(p);
+
+    printHeader("EMERGENCY PATIENT REGISTERED");
+    printf("\n      Patient added successfully!\n\n");
+    printPatient(&p);
+    printf("\n      Patient will be served\n      according to priority.\n\n%s\n", LINE);
+    pauseScreen();
+}
+
+void serveNextPatient(void)
+{
+    struct Patient p;
+
+    printHeader("NEXT PATIENT");
+
+    if (emergencyFront != NULL) {
+        p = dequeueEmergency();
+    } else if (normalFront != NULL) {
+        p = dequeueNormal();
+    } else {
+        printf("\n      No patient in queue.\n\n%s\n", LINE);
+        pauseScreen();
+        return;
+    }
+
+    printf("\n");
+    printPatient(&p);
+    printf("\n%s\n", LINE);
+    pauseScreen();
+}
+
+void viewNormalQueue(void)
+{
+    printHeader("NORMAL PATIENT QUEUE");
+    if (normalFront == NULL) {
+        printf("\n      No patients in the queue.\n");
+    } else {
+        printf("\n");
+        for (Node *t = normalFront; t != NULL; t = t->next)
+            printPatient(&t->data);
+    }
+    printf("\n%s\n", LINE);
+    pauseScreen();
+}
+
+void viewEmergencyQueue(void)
+{
+    printHeader("EMERGENCY PATIENT QUEUE");
+    if (emergencyFront == NULL) {
+        printf("\n      No patients in the queue.\n");
+    } else {
+        printf("\n");
+        for (Node *t = emergencyFront; t != NULL; t = t->next)
+            printPatient(&t->data);
+    }
+    printf("\n%s\n", LINE);
+    pauseScreen();
+}
+
+/* Returns pointer to matching patient or NULL (read-only traversal) */
+const struct Patient *searchById(int id)
+{
+    for (Node *t = emergencyFront; t != NULL; t = t->next)
+        if (t->data.id == id)
+            return &t->data;
+    for (Node *t = normalFront; t != NULL; t = t->next)
+        if (t->data.id == id)
+            return &t->data;
+    return NULL;
+}
+
+const struct Patient *searchByName(const char *name)
+{
+    for (Node *t = emergencyFront; t != NULL; t = t->next)
+        if (equalsIgnoreCase(t->data.name, name))
+            return &t->data;
+    for (Node *t = normalFront; t != NULL; t = t->next)
+        if (equalsIgnoreCase(t->data.name, name))
+            return &t->data;
+    return NULL;
+}
+
+void searchPatient(void)
+{
+    int choice;
+    const struct Patient *found = NULL;
+
+    printHeader("SEARCH PATIENT");
+    printf("1. Search by Patient ID\n2. Search by Patient Name\n\nEnter choice: ");
+
+    if (!readInt(&choice) || (choice != 1 && choice != 2)) {
+        printf("\nInvalid choice.\n");
+        pauseScreen();
+        return;
+    }
+
+    if (choice == 1) {
+        int id;
+        printf("\nEnter Patient ID: ");
+        if (!readInt(&id)) {
+            printf("\nInvalid Patient ID.\n");
+            pauseScreen();
+            return;
+        }
+        found = searchById(id);
+    } else {
+        char name[50];
+        printf("\nEnter Patient Name: ");
+        readLine(name, sizeof(name));
+        found = searchByName(name);
+    }
+
+    if (found != NULL) {
+        printHeader("PATIENT FOUND");
+        printf("\n");
+        printPatient(found);
+        printf("\n%s\n", LINE);
+    } else {
+        printHeader("PATIENT NOT FOUND");
+        printf("\n      No matching patient found.\n\n%s\n", LINE);
+    }
+    pauseScreen();
+}
+
+void freeAll(void)
+{
+    while (normalFront != NULL)
+        dequeueNormal();
+    while (emergencyFront != NULL)
+        dequeueEmergency();
+}
+
+void showMenu(void)
+{
+    printf("\n%s\n         HOSPITAL QUEUE MANAGEMENT SYSTEM\n%s\n\n", LINE, LINE);
+    printf("1. Add Normal Patient\n");
+    printf("2. Add Emergency Patient\n");
+    printf("3. Serve Next Patient\n");
+    printf("4. View Normal Queue\n");
+    printf("5. View Emergency Queue\n");
+    printf("6. Search Patient\n");
+    printf("7. Exit\n\n%s\n", LINE);
+    printf("Enter your choice: ");
+}
+
+int main(void)
+{
+    int choice;
+
+    while (1) {
+        showMenu();
+        if (!readInt(&choice)) {
+            printf("\nInvalid input. Please enter a number.\n");
+            continue;
+        }
+
+        switch (choice) {
+            case 1: addNormalPatient();    break;
+            case 2: addEmergencyPatient(); break;
+            case 3: serveNextPatient();    break;
+            case 4: viewNormalQueue();     break;
+            case 5: viewEmergencyQueue();  break;
+            case 6: searchPatient();       break;
+            case 7:
+                freeAll();
+                printf("\nThank you for using Hospital Queue Management System!\n");
+                return 0;
+            default:
+                printf("\nInvalid choice. Please select 1-7.\n");
+        }
+    }
+}
